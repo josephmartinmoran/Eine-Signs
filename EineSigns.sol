@@ -1,154 +1,132 @@
 // SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-pragma solidity ^0.8.11;
-
+import './ERC721A.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/security/ReentrancyGuard.sol';
-import '@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol';
-import './ERC721A.sol';
-// import "./ERC721Royalty.sol";
 import '@openzeppelin/contracts/utils/Strings.sol';
 
+contract EineSigns is ERC721A, Ownable {
+    string public PROVENANCE;
+    bool public saleIsActive = false;
+    string private _baseURIextended;
 
-contract EineSigns is Ownable, ERC721A, ReentrancyGuard {
-    using Strings for uint256;
+    bool public isAllowListActive = false;
+    uint256 public constant collectionsize = 10000;
+    uint256 public constant maxBatchsize = 5;
+    uint256 public constant PRICE_PER_TOKEN = 0.1 ether;
+    uint256 public amountForDevs;
 
-  string public baseURI;
-  string public baseExtension = ".json";
-  string public notRevealedUri;
-  uint256 public cost = 0.1 ether;
-  uint256 public maxSupply = 10000;
-  uint256 public maxMintAmount = 20;
-  uint256 public nftPerAddressLimit = 5;
-  bool public paused = false;
-  bool public revealed = false;
-  bool public onlyWhitelisted = true;
-  address payable commissions = payable(0xeed247371aF07Ec1b3DDb9F1767bB202807D9a61); //saucedao wallet
-  address[] public whitelistedAddresses;
-  mapping(address => uint256) public addressMintedBalance;
+    mapping(address => uint8) private _allowList;
 
- constructor(
-    string memory _initBaseURI,
-    string memory _initNotRevealedUri
-  ) ERC721A("Eine Signs", "EINES", maxBatchSize, collectionSize){
-    setBaseURI(_initBaseURI);
-    setNotRevealedURI(_initNotRevealedUri);
-  }
-    
+    constructor(uint256 amountForDevs_) ERC721A("Eine Signs", "EINES", 5, 10000) {
+     amountForDevs = amountForDevs_;
+    }
 
-  // internal
-  function _baseURI() internal view virtual override returns (string memory) {
-    return baseURI;
-  }
+    function setIsAllowListActive(bool _isAllowListActive) external onlyOwner {
+        isAllowListActive = _isAllowListActive;
+    }
 
-  // public
-  function mint(uint256 _mintAmount) public payable {
-    require(!paused, "the contract is paused");
-    uint256 supply = totalSupply();
-    require(_mintAmount > 0, "need to mint at least 1 NFT");
-    require(_mintAmount <= maxMintAmount, "max mint amount per session exceeded");
-    require(supply + _mintAmount <= maxSupply, "max NFT limit exceeded");
-
-    if (msg.sender != owner()) {
-        if(onlyWhitelisted == true) {
-            require(isWhitelisted(msg.sender), "user is not whitelisted");
-            uint256 ownerMintedCount = addressMintedBalance[msg.sender];
-            require(ownerMintedCount + _mintAmount <= nftPerAddressLimit, "max NFT per address exceeded");
+    function setAllowList(address[] calldata addresses, uint8 numAllowedToMint) external onlyOwner {
+        for (uint256 i = 0; i < addresses.length; i++) {
+            _allowList[addresses[i]] = numAllowedToMint;
         }
-        require(msg.value >= cost * _mintAmount, "insufficient funds");
     }
 
-    for (uint256 i = 1; i <= _mintAmount; i++) {
-      addressMintedBalance[msg.sender]++;
-      _safeMint(msg.sender, supply + i);
+    function numAvailableToMint(address addr) external view returns (uint8) {
+        return _allowList[addr];
     }
-    
-    (bool success, ) = payable(commissions).call{value: msg.value * 6 / 100}("");
-    require(success);
+
+    function mintAllowList(uint8 numberOfTokens) external payable {
+        uint256 ts = totalSupply();
+        require(isAllowListActive, "Allow list is not active");
+        require(numberOfTokens <= _allowList[msg.sender], "Exceeded max available to purchase");
+        require(ts + numberOfTokens <= collectionsize, "Purchase would exceed max tokens");
+        require(PRICE_PER_TOKEN * numberOfTokens <= msg.value, "Ether value sent is not correct");
+
+        _allowList[msg.sender] -= numberOfTokens;
+        for (uint256 i = 0; i < numberOfTokens; i++) {
+            _safeMint(msg.sender, ts + i);
+        }
+    }
+
+    // For marketing etc.
+    function devMint(uint256 quantity) external onlyOwner {
+        require(
+        totalSupply() + quantity <= amountForDevs,
+        "too many already minted before dev mint"
+    );
+        require(
+        quantity % maxBatchsize == 0,
+        "can only mint a multiple of the maxBatchsize"
+    );
+        uint256 numChunks = quantity / maxBatchsize;
+        for (uint256 i = 0; i < numChunks; i++) {
+        _safeMint(msg.sender, maxBatchsize);
+    }
   }
-  
-  function isWhitelisted(address _user) public view returns (bool) {
-    for (uint i = 0; i < whitelistedAddresses.length; i++) {
-      if (whitelistedAddresses[i] == _user) {
-          return true;
+
+    function setBaseURI(string memory baseURI_) external onlyOwner() {
+        _baseURIextended = baseURI_;
+    }
+
+    function _baseURI() internal view virtual override returns (string memory) {
+        return _baseURIextended;
+    }
+
+    function setProvenance(string memory provenance) public onlyOwner {
+        PROVENANCE = provenance;
+    }
+
+    function reserve(uint256 n) public onlyOwner {
+      uint supply = totalSupply();
+      uint i;
+      for (i = 0; i < n; i++) {
+          _safeMint(msg.sender, supply + i);
       }
     }
-    return false;
-  }
 
-  function walletOfOwner(address _owner)
-    public
-    view
-    returns (uint256[] memory)
-  {
-    uint256 ownerTokenCount = balanceOf(_owner);
-    uint256[] memory tokenIds = new uint256[](ownerTokenCount);
-    for (uint256 i; i < ownerTokenCount; i++) {
-      tokenIds[i] = tokenOfOwnerByIndex(_owner, i);
+    function setSaleState(bool newState) public onlyOwner {
+        saleIsActive = newState;
     }
-    return tokenIds;
-  }
 
-  function tokenURI(uint256 tokenId)
-    public
-    view
-    virtual
-    override
-    returns (string memory)
-  {
-    require(
-      _exists(tokenId),
-      "ERC721Metadata: URI query for nonexistent token"
-    );
+    function mint(uint numberOfTokens) public payable {
+        uint256 ts = totalSupply();
+        require(saleIsActive, "Sale must be active to mint tokens");
+        require(numberOfTokens <= maxBatchsize, "Exceeded max token purchase");
+        require(ts + numberOfTokens <= collectionsize, "Purchase would exceed max tokens");
+        require(PRICE_PER_TOKEN * numberOfTokens <= msg.value, "Ether value sent is not correct");
+
+        for (uint256 i = 0; i < numberOfTokens; i++) {
+            _safeMint(msg.sender, ts + i);
+        }
+    }
+
+  function withdraw() public payable onlyOwner {
+    // This will pay saucedoa 20% of the initial sale.
+    (bool hs, ) = payable(0x6B3945269CA59F7d65de03E7fbcbcF7570e703fD).call{value: address(this).balance * 20 / 100}("");
+    require(hs);
+    // =============================================================================
     
-    if(revealed == false) {
-        return notRevealedUri;
-    }
-
-    string memory currentBaseURI = _baseURI();
-    return bytes(currentBaseURI).length > 0
-        ? string(abi.encodePacked(currentBaseURI, tokenId.toString(), baseExtension))
-        : "";
+    // This will payout the owner 80% of the contract balance.
+    // Do not remove this otherwise you will not be able to withdraw the funds.
+    // =============================================================================
+    (bool os, ) = payable(owner()).call{value: address(this).balance}("");
+    require(os);
   }
-
-  //only owner
-  function reveal() public onlyOwner {
-      revealed = true;
+      function setOwnersExplicit(uint256 quantity) external onlyOwner {
+    _setOwnersExplicit(quantity);
   }
   
-  function setNftPerAddressLimit(uint256 _limit) public onlyOwner {
-    nftPerAddressLimit = _limit;
-  }
-  
-  function setCost(uint256 _newCost) public onlyOwner {
-    cost = _newCost;
+  function numberMinted(address owner) public view returns (uint256) {
+    return _numberMinted(owner);
   }
 
-  function setmaxMintAmount(uint256 _newmaxMintAmount) public onlyOwner {
-    maxMintAmount = _newmaxMintAmount;
+  function getOwnershipData(uint256 tokenId)
+    external
+    view
+    returns (TokenOwnership memory)
+  {
+    return ownershipOf(tokenId);
   }
-
-  function setBaseURI(string memory _newBaseURI) public onlyOwner {
-    baseURI = _newBaseURI;
-  }
-
-  function setBaseExtension(string memory _newBaseExtension) public onlyOwner {
-    baseExtension = _newBaseExtension;
-  }
-  
-  function setNotRevealedURI(string memory _notRevealedURI) public onlyOwner {
-    notRevealedUri = _notRevealedURI;
-  }
-
-  function pause(bool _state) public onlyOwner {
-    paused = _state;
-  }
-  
-  function setOnlyWhitelisted(bool _state) public onlyOwner {
-    onlyWhitelisted = _state;
-  }
-    function withdrawMoney() external onlyOwner nonReentrant {
-    (bool success, ) = msg.sender.call{value: address(this).balance}("");
-    require(success, "Transfer failed.");
-    }
 }
