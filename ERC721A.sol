@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.11;
+pragma solidity ^0.8.0;
 
 import '@openzeppelin/contracts/token/ERC721/IERC721.sol';
 import '@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol';
@@ -76,11 +76,6 @@ contract ERC721A is Context, ERC165, IERC721, IERC721Metadata, IERC721Enumerable
     //maxBatchSize` refers to how much a minter can mint at a time.
     //collectionSize_` refers to how many tokens are in the collection.
     constructor(string memory name_, string memory symbol_, uint256 maxBatchSize_, uint256 collectionSize_) {
-     require(
-      collectionSize_ > 0,
-      "ERC721A: collection must have a nonzero supply"
-        );
-        require(maxBatchSize_ > 0, "ERC721A: max batch size must be nonzero");
         _name = name_;
         _symbol = symbol_;
         maxBatchSize = maxBatchSize_;
@@ -287,16 +282,11 @@ contract ERC721A is Context, ERC165, IERC721, IERC721Metadata, IERC721Enumerable
         _mint(to, quantity, _data, true);
     }
 
-    /**
-     * @dev Mints `quantity` tokens and transfers them to `to`.
-     *
-     * Requirements:
-     *
-     * - `to` cannot be the zero address.
-     * - `quantity` must be greater than 0.
-     *
-     * Emits a {Transfer} event.
-     */
+    //Mints `quantity` tokens and transfers them to `to`.
+    //Requirements
+    //- `to` cannot be the zero address.
+    //- `quantity` must be greater than 0.
+    //Emits a {Transfer} event.
     function _mint(
         address to,
         uint256 quantity,
